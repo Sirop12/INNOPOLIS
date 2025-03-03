@@ -1,0 +1,118 @@
+#region init
+' БОЛЬШИЕ моторы обозначаем
+MotorB.IsLarge()
+MotorC.IsLarge()
+' режим работы датчика отраж.без калтбровки
+Sensor.SetMode(2,3)
+Sensor.SetMode(3,3)
+' читаем калибровку
+file = EV3File.OpenRead("calibration.txt")
+Lmin = EV3File.ConvertToNumber(EV3File.ReadLine(file))
+Lmax = EV3File.ConvertToNumber(EV3File.ReadLine(file))
+Rmin = EV3File.ConvertToNumber(EV3File.ReadLine(file))
+Rmax = EV3File.ConvertToNumber(EV3File.ReadLine(file))
+
+' кофф для пд
+kp = 0.7
+kd = 8
+lasterror = 0
+
+Dk = 5.6 ' диаметр колёс робота
+D = 12.5 ' расстояние между колесами
+
+'''' Чтение калибровки значения датчиков линии
+'''' Номер порта датчика
+'''' return data
+
+Function readcalibrated (in number port, out number data)
+  If port = 2 Then
+    data = (Sensor2.Raw1()-@Lmax)/(@Lmin-@Lmax)*100
+    
+  ElseIf port = 3 Then
+    data = (Sensor3.Raw1()-@Rmax)/(@Rmin-@Rmax)*100
+  EndIf
+  
+  If data > 100 Then
+    data = 100
+  EndIf
+  
+  If data < 0 Then
+    data = 0
+  EndIf
+EndFunction
+
+Function PDline (in number speed)
+  readcalibrated(2,@s2)
+  readcalibrated(3,@s3)
+  error = @s2 - @s3
+  upr = @kp * error + @kd * (error-@lasterror)
+  MotorB.StartPower(speed+upr)
+  MotorC.StartPower(speed-upr)
+  @lasterror = error
+  Program.Delay(0.001)
+EndFunction
+
+Function line_encoder (in number speed, in number distance)
+  distance = Math.Round(distance*360 / (Math.Pi * @Dk))
+  MotorB.ResetCount()
+  MotorC.ResetCount()
+  encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
+  While encoder < distance
+    encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
+    PDline(speed)
+  EndWhile
+  MotorBC.OffAndBrake()
+EndFunction
+
+Function break1 (in number stop, in number proezd)
+  
+  If stop = 1 Then ' простоя остоновка
+    MotorBC.OffAndBrake()
+  EndIf
+  If stop = 2 Then'стоовка на перекрстках
+    MotorB.ResetCount()
+    MotorC.ResetCount()
+    encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
+    proezd = Math.Round(proezd*360 / (Math.Pi * @Dk))
+    While encoder < proezd
+      Motor.StartSync("BC",20,20)
+      encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
+    EndWhile
+    MotorBC.OffAndBrake()
+    Program.Delay(200)
+  EndIf
+EndFunction
+
+Function line_perecrestok (in number speed, in number proezd, in number start_distance, in number stop)
+  If start_distance > 0 Then
+    line_encoder(speed/2,start_distance)
+  EndIf
+  MotorB.ResetCount()
+  MotorC.ResetCount()
+  encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
+  
+  While @s2+@s3 > 30 Or encoder<100
+    encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorB.GetTacho()))/2
+    PDline(speed)
+  EndWhile
+  
+  Speaker.Tone(95,1500,50)
+  break1(stop,proezd)
+EndFunction
+
+Function TurnDegrees (in number speed, in number degrees)
+  side = degrees / Math.Abs(degrees)
+  degrees = @D * Math.Abs(degrees) / @Dk
+  
+  MotorB.ResetCount()
+  MotorC.ResetCount()
+  cur_enc = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
+  
+  While cur_enc < degrees
+    Motor.StartSync("BC",speed*side,speed*-1*side)
+    cur_enc = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorB.GetTacho()))/2
+  EndWhile
+  
+  MotorBC.OffAndBrake()
+  
+  EndFunction
