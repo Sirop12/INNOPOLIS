@@ -1,34 +1,37 @@
+
 #region init
-' БОЛЬШИЕ моторы обозначаем
+
 MotorB.IsLarge()
-MotorC.IsLarge()
-' режим работы датчика отраж.без калтбровки
-Sensor.SetMode(2,3)
-Sensor.SetMode(3,3)
-' читаем калибровку
+MotorC.IsLarge() 
+' моторы большие, которые колёсики
+
+Sensor.SetMode(2,3)'Датчики света
+Sensor.SetMode(3,3)'режим работы датчиков
+
 file = EV3File.OpenRead("calibration.txt")
+
 Lmin = EV3File.ConvertToNumber(EV3File.ReadLine(file))
 Lmax = EV3File.ConvertToNumber(EV3File.ReadLine(file))
 Rmin = EV3File.ConvertToNumber(EV3File.ReadLine(file))
 Rmax = EV3File.ConvertToNumber(EV3File.ReadLine(file))
 
-' кофф для пд
-kp = 0.7
+kp = 0.8
 kd = 8
 lasterror = 0
 
-Dk = 5.6 ' диаметр колёс робота
-D = 12.5 ' расстояние между колесами
+D = 5.6
+L = 12.9
 
-'''' Чтение калибровки значения датчиков линии
-'''' Номер порта датчика
-'''' return data
-
-Function readcalibrated (in number port, out number data)
+#endregion
+Function Reset()
+  MotorB.ResetCount()
+  MotorC.ResetCount()
+EndFunction
+''''значение цвета от 0 ддо 100
+Function readcalibrated(in number port, out number data)
   If port = 2 Then
     data = (Sensor2.Raw1()-@Lmax)/(@Lmin-@Lmax)*100
-    
-  ElseIf port = 3 Then
+  ELseIf port = 3 Then
     data = (Sensor3.Raw1()-@Rmax)/(@Rmin-@Rmax)*100
   EndIf
   
@@ -36,46 +39,57 @@ Function readcalibrated (in number port, out number data)
     data = 100
   EndIf
   
-  If data < 0 Then
+  If data < 0 Then 
     data = 0
   EndIf
+  
 EndFunction
-
-Function PDline (in number speed)
+'''' врум-врум по линии
+Function PDline(in number speed)
   readcalibrated(2,@s2)
   readcalibrated(3,@s3)
+  
   error = @s2 - @s3
-  upr = @kp * error + @kd * (error-@lasterror)
+  
+  upr = @kp * error + @kd * (error - @lasterror)
+  
   MotorB.StartPower(speed+upr)
   MotorC.StartPower(speed-upr)
+  
   @lasterror = error
+  
   Program.Delay(0.001)
 EndFunction
 
-Function line_encoder (in number speed, in number distance)
-  distance = Math.Round(distance*360 / (Math.Pi * @Dk))
-  MotorB.ResetCount()
-  MotorC.ResetCount()
+'''' врум-врум на заданное расстояние
+Function line_encoder(in number speed, in number distance)
+  distance = Math.Round(distance * 360 / (Math.pi * @D))
+  
+  Reset
   encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
+  
   While encoder < distance
     encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
     PDline(speed)
   EndWhile
+  
   MotorBC.OffAndBrake()
 EndFunction
 
-Function break1 (in number stop, in number proezd)
-  
-  If stop = 1 Then ' простоя остоновка
+'''' виды торможения
+''''0 - не останавливаться
+''''1 - простая остановка
+''''2 - остановка на перекрёстке
+Function stop(in number stop, in number proezd)
+  If stop = 1 Then 
     MotorBC.OffAndBrake()
   EndIf
-  If stop = 2 Then'стоовка на перекрстках
-    MotorB.ResetCount()
-    MotorC.ResetCount()
+  If stop = 2 Then
+    Reset()
     encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
-    proezd = Math.Round(proezd*360 / (Math.Pi * @Dk))
-    While encoder < proezd
-      Motor.StartSync("BC",20,20)
+    proezd = Math.Round(proezd * 360 / (Math.pi * @D))
+    While encoder<proezd
+      Motor.StartSync("8C",20,20)
       encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
     EndWhile
     MotorBC.OffAndBrake()
@@ -83,79 +97,76 @@ Function break1 (in number stop, in number proezd)
   EndIf
 EndFunction
 
-Function line_perecrestok (in number speed, in number proezd, in number start_distance, in number stop)
-  If start_distance > 0 Then
-    line_encoder(speed/2,start_distance)
+''''находит перекрёсток
+''''speed - скорость
+''''proezd - съезд с линии после обнаружения перекрёстка(для поворота) в см
+''''start - корректировочный проезд в начале движения в см
+''''stop - тип остановки 
+Function line_perekrestok(in number speed, in number proezd, in number start, in number stop)
+  If start>0 Then
+    line_encoder(speed/2, start)
   EndIf
-  MotorB.ResetCount()
-  MotorC.ResetCount()
+  
+  Reset()
   encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
   
-  While @s2+@s3 > 30 Or encoder<100
-    encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorB.GetTacho()))/2
+  while @s2+@s3>30 or encoder<100 
+    encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
     PDline(speed)
   EndWhile
   
-  Speaker.Tone(95,1500,50)
-  break1(stop,proezd)
+  Speaker.Tone(95, 1500, 50)
+  stop(stop, proezd)
 EndFunction
 
-Function TurnDegrees (in number speed, in number degrees)
-  
+''''поворот по градусам
+Function TurnDegrees(in number speed, in number degrees)
   side = degrees / Math.Abs(degrees)
-  degrees = @D * Math.Abs(degrees) / @Dk
+  degrees = @L * Math.Abs(degrees) / @D
   
-  MotorB.ResetCount()
-  MotorC.ResetCount()
+  Reset()
   cur_enc = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
   
   While cur_enc < degrees
-    Motor.StartSync("BC",speed*side,speed*-1*side)
-    cur_enc = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorB.GetTacho()))/2
+    Motor.StartSync("BC", speed*side, speed*-1*side)
+    cur_enc = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
   EndWhile
   
   MotorBC.OffAndBrake()
-  EndFunction
   
-  
+EndFunction
 
-
-
-
-
-Function Turn(in number speed, in number degrees)
+Function turn(in number speed, in number degrees)
   side = degrees / Math.Abs(degrees)
   port = 3-(side+1)/2
-  degrees = @D * Math.Abs(degrees) / @Dk
-  start_distance = degrees - 50
-  
-  
-  MotorB.ResetCount()
-  MotorC.ResetCount()
+  degrees = @L * Math.Abs(degrees) / @D
+  start_distance = degreea - 50 
+  Reset()
   cur_enc = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
+
   err_old = 0
-  While cur_enc < start_distance
-    Motor.StartSync("BC",speed*side,speed*-1*side)
-    b= MotorB.GetTacho()
-    c= MotorC.GetTacho()
-    cur_enc = (Math.Abs(b)+Math.Abs(c)) /2
+  While cur_enc < start_distance 
+    b = MotorB.GetTacho()
+    c = MotorC.GetTacho()
+    cur_enc = (Math.Abs(b)+Math.Abs(c))/2
+  EndWhile
+  While Vd > 5-
+    readcalibrated(port, Vd)
+    Motor.StartSync("BC", speed*side, speed*-1*side)
   EndWhile
   
-  While vd > 50
-    readcalibrated(port,Vd)
-    Motor.StartSync("BC",speed*side,speed*-1*side)
-  EndWhile
-  
-  err_old = 0 
+  err_old = 0
   Time.Reset1()
   While Time.Get1()<60
-    readcalibrated(2,s2)
-    readcalibrated(3,s3)
-    error = s2- s3
-    upr = 3*error + 4*(error - err_old)
-    err_old = error
+    readcalibrated(2, @s2)
+    readcalibrated(3, @s3)
+    err = @s2 - @s3
+    upr = 3 * err + 4*(err-err_old)
+    err_old = err
     MotorB.StartPower(upr)
-    MotorB.StartPower(-upr)
+    MotorC.StartPower(-upr)
   EndWhile
   MotorBC.OffAndBrake()
- EndFunction
+EndFunction      
+ior2025/lib at main · tenswik/ior2025
+While the code is focused, press Alt+F1 for a menu of operations.
