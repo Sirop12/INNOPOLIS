@@ -101,6 +101,7 @@ Function line_perecrestok (in number speed, in number proezd, in number start_di
 EndFunction
 
 Function TurnDegrees (in number speed, in number degrees)
+  
   side = degrees / Math.Abs(degrees)
   degrees = @D * Math.Abs(degrees) / @Dk
   
@@ -114,5 +115,47 @@ Function TurnDegrees (in number speed, in number degrees)
   EndWhile
   
   MotorBC.OffAndBrake()
-  
   EndFunction
+  
+  
+
+
+
+
+
+Function Turn(in number speed, in number degrees)
+  side = degrees / Math.Abs(degrees)
+  port = 3-(side+1)/2
+  degrees = @D * Math.Abs(degrees) / @Dk
+  start_distance = degrees - 50
+  
+  
+  MotorB.ResetCount()
+  MotorC.ResetCount()
+  cur_enc = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
+  err_old = 0
+  While cur_enc < start_distance
+    Motor.StartSync("BC",speed*side,speed*-1*side)
+    b= MotorB.GetTacho()
+    c= MotorC.GetTacho()
+    cur_enc = (Math.Abs(b)+Math.Abs(c)) /2
+  EndWhile
+  
+  While vd > 50
+    readcalibrated(port,Vd)
+    Motor.StartSync("BC",speed*side,speed*-1*side)
+  EndWhile
+  
+  err_old = 0 
+  Time.Reset1()
+  While Time.Get1()<60
+    readcalibrated(2,s2)
+    readcalibrated(3,s3)
+    error = s2- s3
+    upr = 3*error + 4*(error - err_old)
+    err_old = error
+    MotorB.StartPower(upr)
+    MotorB.StartPower(-upr)
+  EndWhile
+  MotorBC.OffAndBrake()
+ EndFunction
