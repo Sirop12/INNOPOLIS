@@ -1,0 +1,60 @@
+folder "prjs" "ino25"
+' БОЛЬШИЕ моторы обозначаем
+MotorB.IsLarge()
+MotorC.IsLarge()
+' режим работы датчика отраж.без калтбровки
+Sensor.SetMode(2,3)
+Sensor.SetMode(3,3)
+
+Lmin = 5000
+Lmax = -5000
+
+Rmin = 5000
+Rmax = -5000
+
+Time.Reset1()
+While Time.Get1()<3000
+  s2 = Sensor2.Raw1()
+  s3 = Sensor3.Raw1()
+  
+  Lmin = Math.Min(Lmin, s2)
+  Lmax = Math.Max(Lmax, s2)
+  
+  Rmin = Math.Min(Rmin, s3)
+  Rmax = Math.Max(Rmax, s3)
+  
+  MotorB.StartPower(50)
+  MotorC.StartPower(50)
+  
+EndWhile
+
+Time.Reset1()
+While Time.Get1()<3000
+  s2 = Sensor2.Raw1()
+  s4 = Sensor3.Raw1()
+  
+  Lmin = Math.Min(Lmin, s2)
+  Lmax = Math.Max(Lmax, s2)
+  
+  Rmin = Math.Min(Rmin, s3)
+  Rmax = Math.Max(Rmax, s3)
+  
+  MotorB.StartPower(-50)
+  MotorC.StartPower(-50)
+  
+EndWhile
+MotorBC.OffAndBrake()
+
+
+
+file = EV3File.OpenWrite("calibration.txt")
+EV3File.WriteLine(file,Lmin)
+EV3File.WriteLine(file,Lmax)
+EV3File.WriteLine(file,Rmin)
+EV3File.WriteLine(file,Rmax)
+
+LCD.Clear()
+LCD.Text(1,0,30,1,"L:"+Lmin+"to"+Lmax)
+LCD.Text(1,0,60,1,"R:"+Rmin+"to"+Rmax)
+LCD.Update()
+Buttons.Wait()
