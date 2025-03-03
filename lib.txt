@@ -65,7 +65,7 @@ EndFunction
 Function line_encoder(in number speed, in number distance)
   distance = Math.Round(distance * 360 / (Math.pi * @D))
   
-  Reset
+  Reset()
   encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
   
   While encoder < distance
