@@ -1,4 +1,3 @@
-
 #region init
 
 MotorB.IsLarge()
@@ -8,6 +7,9 @@ MotorC.IsLarge()
 Sensor.SetMode(2,3)'Датчики света
 Sensor.SetMode(3,3)'режим работы датчиков
 
+'датчик для бинарки
+Sensor.SetMode(4,0)
+
 file = EV3File.OpenRead("calibration.txt")
 
 Lmin = EV3File.ConvertToNumber(EV3File.ReadLine(file))
@@ -15,19 +17,31 @@ Lmax = EV3File.ConvertToNumber(EV3File.ReadLine(file))
 Rmin = EV3File.ConvertToNumber(EV3File.ReadLine(file))
 Rmax = EV3File.ConvertToNumber(EV3File.ReadLine(file))
 
-kp = 0.8
-kd = 8
+kp = 0.7
+kd = 4
 lasterror = 0
+kp1 = 0.7
+kd1 = 0.7
+
+cur_x = 3 
+Cur_y = 1
+
+dir = 0
 
 D = 5.6
 L = 12.9
 
+num1 = Row.Init(4, 0)
+num2 = Row.Init(4, 0)
+
 #endregion
+''''работает
 Function Reset()
   MotorB.ResetCount()
   MotorC.ResetCount()
 EndFunction
-''''значение цвета от 0 ддо 100
+''''значение цвета от 0 до 100
+''''работает
 Function readcalibrated(in number port, out number data)
   If port = 2 Then
     data = (Sensor2.Raw1()-@Lmax)/(@Lmin-@Lmax)*100
@@ -45,6 +59,7 @@ Function readcalibrated(in number port, out number data)
   
 EndFunction
 '''' врум-врум по линии
+''''работает
 Function PDline(in number speed)
   readcalibrated(2,@s2)
   readcalibrated(3,@s3)
@@ -62,6 +77,7 @@ Function PDline(in number speed)
 EndFunction
 
 '''' врум-врум на заданное расстояние
+''''работает
 Function line_encoder(in number speed, in number distance)
   distance = Math.Round(distance * 360 / (Math.pi * @D))
   
@@ -80,16 +96,17 @@ EndFunction
 ''''0 - не останавливаться
 ''''1 - простая остановка
 ''''2 - остановка на перекрёстке
+''''не работает
 Function stop(in number stop, in number proezd)
   If stop = 1 Then 
-    MotorBC.OffAndBrake()
+    Reset() 
   EndIf
   If stop = 2 Then
     Reset()
     encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
     proezd = Math.Round(proezd * 360 / (Math.pi * @D))
     While encoder<proezd
-      Motor.StartSync("8C",20,20)
+      Motor.StartSync("BC",20,20)
       encoder = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
     EndWhile
     MotorBC.OffAndBrake()
@@ -102,6 +119,7 @@ EndFunction
 ''''proezd - съезд с линии после обнаружения перекрёстка(для поворота) в см
 ''''start - корректировочный проезд в начале движения в см
 ''''stop - тип остановки 
+''''вроде работает
 Function line_perekrestok(in number speed, in number proezd, in number start, in number stop)
   If start>0 Then
     line_encoder(speed/2, start)
@@ -140,17 +158,18 @@ Function turn(in number speed, in number degrees)
   side = degrees / Math.Abs(degrees)
   port = 3-(side+1)/2
   degrees = @L * Math.Abs(degrees) / @D
-  start_distance = degreea - 50 
+  start_distance = degrees - 50 
   Reset()
   cur_enc = (Math.Abs(MotorB.GetTacho())+Math.Abs(MotorC.GetTacho()))/2
 
   err_old = 0
   While cur_enc < start_distance 
+    Motor.StartSync("BC", speed*side, speed*-1*side)
     b = MotorB.GetTacho()
     c = MotorC.GetTacho()
     cur_enc = (Math.Abs(b)+Math.Abs(c))/2
   EndWhile
-  While Vd > 5-
+  While Vd > 50
     readcalibrated(port, Vd)
     Motor.StartSync("BC", speed*side, speed*-1*side)
   EndWhile
@@ -168,5 +187,196 @@ Function turn(in number speed, in number degrees)
   EndWhile
   MotorBC.OffAndBrake()
 EndFunction      
-ior2025/lib at main · tenswik/ior2025
-While the code is focused, press Alt+F1 for a menu of operations.
+
+'''' Поворот в нужную сторону
+'''' target - целевое направление
+''''type - без линии / с линией
+Function turn_compass(in number target, in number type)
+  If target<>@dir Then
+    N = target - @dir
+    
+    If Math.Abs(N)=3 Then
+      N = -1*(N/Math.Abs(N))
+    EndIf
+    
+    If type=0 Then
+      TurnDegrees(50,90*N)
+    EndIf
+    
+    If type=1 Then
+      turn(50, 90*N)
+    EndIf
+    
+    @dir = target
+  EndIf
+EndFunction
+
+Function navigator(in number target_x, in number Target_y)
+  
+  If target_x > @cur_x Then
+    turn_compass(1, 1)
+  Else
+    turn_compass(3, 1)
+  EndIf
+  
+  For i = 1 To (Math.Abs(target_x - @cur_x))
+    line_perekrestok(30,4,5,2)
+  EndFor
+  
+  If target_y > @cur_y Then
+    turn_compass(0, 1)
+  Else
+    turn_compass(2, 1)
+  EndIf
+  
+  For i = 1 To (Math.Abs(target_y - @cur_y))
+    line_perekrestok(30,4,5,2)
+  EndFor
+  
+  @cur_y = target_y
+  @cur_x = target_x
+  
+EndFunction
+
+Function 2to10(in number n_array, out number num)
+  
+  num = 0
+  If n_array = 1 Then
+    For i = 0 To Row.Size(@num1)-1
+      num += Row.Read(@num1, i)*Math.Power(2,Row.Size(@num1)-(i+1))
+    EndFor
+  ElseIf n_array = 2 Then
+    For i = 0 To Row.Size(@num2)-1
+      num += Row.Read(@num2, i)*Math.Power(2,Row.Size(@num2)-(i+1))
+    EndFor
+  EndIf
+
+  
+EndFunction
+
+Function binary(out number n1, out number n2)
+  @kp = @kp/1.5
+  @kd = @kd/1.5
+  line_perekrestok(30,0,5,2)
+  line_encoder(20, 2.4)
+  Speaker.Tone(90, 1500, 500)
+  Speaker.Tone(90, 80, 500)
+  Program.Delay(1000)
+  For i = 0 To 3
+    If Sensor.ReadPercent(4) < 50 Then
+      Row.Write(@num1, i, 1)
+      Speaker.Tone(95, 1500, 500)
+    Else
+      Speaker.Tone(95, 800, 500)
+    EndIf
+    line_encoder(20, 2.4)
+    Program.Delay(500)
+  EndFor
+  
+  For i = 0 To 3
+    If Sensor.ReadPercent(4) < 50 Then
+      Row.Write(@num2, i, 1)
+      Speaker.Tone(95, 1500, 500)
+    Else
+      Speaker.Tone(95, 800, 500)
+    EndIf
+    line_encoder(20, 2.4)
+    Program.Delay(500)
+  EndFor
+  
+  LCD.Clear()
+  For i = 0 To 3
+    LCD.Text(1,0,10 + 10 * i, 1, Row.Read(@num1, i))
+    LCD.Text(1,0,50 + 10 * i, 1, Row.Read(@num2, i))
+  EndFor
+  
+  2to10(1, n1)
+  2to10(2, n2)
+  LCD.Text(1,50,30,1,"Num 1:"+ n1)
+  LCD.Text(1,50,60,1,"Num 2:"+ n2)
+  LCD.Update()
+  
+  'Buttons.Wait()
+  @kp = @kp*1.5
+  @kd = @kd*1.5
+EndFunction
+
+Function PDlineCOLOR(in number speed)
+  r2 = 0
+  g2 = 0
+  b2 = 0
+  
+  r3 = 0
+  g3 = 0
+  b3 = 0
+  
+  If r2 > 255 Then
+    r2 = 255
+  EndIf
+  
+  If g2 > 255 Then
+    g2 = 255
+  EndIf
+  
+  Sensor2.Raw3(r2,g2,b2)
+  Sensor3.Raw3(r3,g3,b3)
+  
+  error = (r2+g2) - (r3+g3)
+  
+  upr = @kp1 * error + @kd1 * (error - @lasterror)
+  
+  MotorB.StartPower(speed-upr)
+  MotorC.StartPower(speed+upr)
+  
+  @lasterror = error
+  
+  Program.Delay(0.001)
+  
+  
+EndFunction
+
+Function grab(out number grabed)
+  MotorA.StartPower(40)
+  lastEnc = MotorA.GetTacho()
+  Program.Delay(100)
+  While MotorA.GetTacho() - lastEnc > 5
+    lastEnc = MotorA.GetTacho()
+    Program.Delay(100)
+  EndWhile
+  grabed = 1
+  If MotorA.GetTacho() > 205 Then
+    Speaker.Tone(90,1500,50)
+    Program.Delay(100)
+    Speaker.Tone(90,1500,50)
+    Program.Delay(50)
+    grabed = 0
+  EndIF
+  MotorA.StartPower(10)
+EndFunction
+
+Function relice()
+  MotorA.StartPower(-30)
+  While MotorA.GetTacho() > 30
+    Program.Delay(1)
+  EndWhile
+  MotorA.StartPower(-5)
+  While MotorA.GetTacho() > 0
+    Program.Delay(1)
+  EndWhile
+  
+  MotorA.OffAndBrake()
+EndFunction
+Function calibreatGrab()
+  gr = 0
+  LCD.Text(1, 0, 0, 2, "Calibrate")
+  LCD.Text(1, 20, 50, 2, "Graber")
+  grab(gr)
+  MotorA.ResetCount()
+  MotorA.StartPower(-20)
+  While MotorA.GetTacho() > -210
+    Program.Delay(1)
+  EndWhile
+  MotorA.OffAndBrake()
+  MotorA.ResetCount()
+  LCD.Clear()
+EndFunction
